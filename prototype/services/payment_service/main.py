@@ -7,7 +7,14 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 from common.database import create_pool
+from common.fault_injection import FaultInjector, install_fault_routes
 from common.observability import configure_tracing
+
+
+fault_injector = FaultInjector(
+    service_name="payment-service",
+    supported_points={"payment.http.response.after_commit": {"lost_response"}},
+)
 
 
 class PaymentRequest(BaseModel):
@@ -30,6 +37,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="payment-service", lifespan=lifespan)
 configure_tracing(app)
+install_fault_routes(app, fault_injector)
 
 
 @app.get("/health")
@@ -47,9 +55,10 @@ async def create_payment(payload: PaymentRequest) -> PaymentResponse:
         payload.order_id,
         payload.amount,
     )
-    return PaymentResponse(
-        payment_id=payment_id,
-        order_id=payload.order_id,
-        status="captured",
-    )
+    async with fault_injector.point("payment.http.response.after_commit"):
+        return PaymentResponse(
+            payment_id=payment_id,
+            order_id=payload.order_id,
+            status="captured",
+        )
 

@@ -130,6 +130,8 @@ services:
       OTEL_SERVICE_NAME: order-service
     ports:
       - "8000:8000"
+    volumes:
+      - ./results:/app/results
     depends_on:
       postgres:
         condition: service_healthy

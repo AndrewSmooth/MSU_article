@@ -30,6 +30,7 @@ class OrderResponse(BaseModel):
     payment_id: UUID
     status: str
     duration_ms: int
+    trace_id: str
 
 
 @asynccontextmanager
@@ -74,25 +75,34 @@ async def create_order(payload: OrderRequest) -> OrderResponse:
         payload.amount,
     )
 
-    await pool.execute(
-        "INSERT INTO payment_attempts(order_id, attempt_number) VALUES($1, 1)",
-        order_id,
-    )
-
-    try:
-        payment_response = await app.state.http.post(
-            "/payments",
-            json={"order_id": str(order_id), "amount": str(payload.amount)},
+    payment: dict | None = None
+    last_payment_error: httpx.HTTPError | None = None
+    for attempt_number in range(1, 3):
+        await pool.execute(
+            "INSERT INTO payment_attempts(order_id, attempt_number) VALUES($1, $2)",
+            order_id,
+            attempt_number,
         )
-        payment_response.raise_for_status()
-    except httpx.HTTPError as error:
+        try:
+            payment_response = await app.state.http.post(
+                "/payments",
+                json={"order_id": str(order_id), "amount": str(payload.amount)},
+            )
+            payment_response.raise_for_status()
+            payment = payment_response.json()
+            break
+        except httpx.HTTPError as error:
+            last_payment_error = error
+
+    if payment is None:
         await pool.execute(
             "UPDATE orders SET status='FAILED', updated_at=now() WHERE id=$1",
             order_id,
         )
-        raise HTTPException(status_code=502, detail="Payment service failed") from error
+        raise HTTPException(
+            status_code=502, detail="Payment service failed"
+        ) from last_payment_error
 
-    payment = payment_response.json()
     await pool.execute(
         "UPDATE orders SET status='PAID', updated_at=now() WHERE id=$1",
         order_id,
@@ -142,6 +152,7 @@ async def create_order(payload: OrderRequest) -> OrderResponse:
         payment_id=UUID(payment["payment_id"]),
         status="PAID",
         duration_ms=duration_ms,
+        trace_id=f"{trace.get_current_span().get_span_context().trace_id:032x}",
     )
 
 

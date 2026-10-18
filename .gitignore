@@ -23,3 +23,7 @@ __pycache__/
 Thumbs.db
 .DS_Store
 
+# Experiment output
+/prototype/results/*.jsonl
+!/prototype/results/.gitkeep
+
