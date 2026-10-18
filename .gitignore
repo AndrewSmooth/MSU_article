@@ -1,0 +1,25 @@
+# LaTeX build files
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+
+# Generated article PDFs
+/article.pdf
+/Тестирование инъекциями отказов.pdf
+
+# Local reference copies
+/examples/
+/02_dspace_frontend_2025.pdf
+
+# Temporary files
+/tmp/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+Thumbs.db
+.DS_Store
+
