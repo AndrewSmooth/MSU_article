@@ -11,10 +11,18 @@ from opentelemetry import propagate, trace
 from opentelemetry.trace import SpanKind
 
 from common.database import create_pool
+from common.fault_injection import InjectedFault, FaultInjector, install_fault_routes
 from common.observability import configure_tracing
 
 
 tracer = trace.get_tracer(__name__)
+fault_injector = FaultInjector(
+    service_name="notification-service",
+    supported_points={
+        "notification.kafka.order_paid.consume": {"delay", "error"},
+        "notification.kafka.notification.retry": {"delay", "error"},
+    },
+)
 
 
 async def consume_events(app: FastAPI) -> None:
@@ -33,16 +41,22 @@ async def consume_events(app: FastAPI) -> None:
             context=parent_context,
             kind=SpanKind.CONSUMER,
         ):
-            event = json.loads(message.value.decode("utf-8"))
-            await pool.execute(
-                """
-                INSERT INTO notifications(event_id, order_id)
-                VALUES($1, $2)
-                ON CONFLICT (event_id) DO NOTHING
-                """,
-                UUID(event["event_id"]),
-                UUID(event["order_id"]),
-            )
+            try:
+                async with fault_injector.point(
+                    "notification.kafka.order_paid.consume"
+                ):
+                    event = json.loads(message.value.decode("utf-8"))
+                    await pool.execute(
+                        """
+                        INSERT INTO notifications(event_id, order_id)
+                        VALUES($1, $2)
+                        ON CONFLICT (event_id) DO NOTHING
+                        """,
+                        UUID(event["event_id"]),
+                        UUID(event["order_id"]),
+                    )
+            except InjectedFault:
+                continue
 
 
 @asynccontextmanager
@@ -66,6 +80,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="notification-service", lifespan=lifespan)
 configure_tracing(app)
+install_fault_routes(app, fault_injector)
 
 
 @app.get("/health")

@@ -24,6 +24,6 @@ Thumbs.db
 .DS_Store
 
 # Experiment output
-/prototype/results/*.jsonl
+/prototype/results/*
 !/prototype/results/.gitkeep
 

@@ -7,6 +7,10 @@ import urllib.request
 
 BASE_URL = os.getenv("ORDER_SERVICE_URL", "http://localhost:8000")
 PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://localhost:8001")
+NOTIFICATION_BASE_URL = os.getenv(
+    "NOTIFICATION_SERVICE_URL", "http://localhost:8002"
+)
+SERVICE_URLS = [BASE_URL, PAYMENT_BASE_URL, NOTIFICATION_BASE_URL]
 
 
 def request_json(
@@ -36,9 +40,12 @@ def wait_for_service(base_url: str) -> None:
 
 
 def main() -> None:
-    wait_for_service(BASE_URL)
-    wait_for_service(PAYMENT_BASE_URL)
-    request_json("DELETE", PAYMENT_BASE_URL, "/internal/fault")
+    for service_url in SERVICE_URLS:
+        wait_for_service(service_url)
+        request_json(
+            "PUT", service_url, "/internal/fault/mode", {"enabled": True}
+        )
+        request_json("DELETE", service_url, "/internal/fault")
     created = request_json(
         "POST",
         BASE_URL,
